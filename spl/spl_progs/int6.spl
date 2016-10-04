@@ -1,0 +1,129 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];
+
+alias currentPCB S2;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);	
+
+if(sysCallNo == 9) then
+	alias fileName S3;
+	fileName = [physicalSP - 3];
+	alias FATIdx S4;
+	FATIdx = 0;
+	while (FATIdx < 64) do
+		if ([FATIdx*8 + FAT] == fileName) then
+			break;
+		endif;	
+		FATIdx = FATIdx+1;
+	endwhile;
+	if (FATIdx == 64) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	load(1,[FAT + 8*FATIdx + 2]);
+	alias dataBlocks S5;
+	alias counter S6;
+	dataBlocks = [FAT + FATIdx*8 + 1] /512;
+	
+	if (dataBlocks == 0 || dataBlocks > 3) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias availPages S7;
+	alias i S8;
+	counter = 0;
+	availPages = 0;
+	while(counter < 3) do
+		if([PTBR + counter*2 + 1] == "01" || [PTBR + counter*2 + 1] == "11") then
+			if([PTBR + counter*2]!= -1) then
+				availPages = availPages+1;
+			endif;	
+		endif;
+		counter = counter+1;
+	endwhile;
+
+	counter = 0;
+	if(availPages < dataBlocks) then
+		i = dataBlocks - availPages;
+		counter = 29;
+		while(counter<64 && i > 0) do
+			if([1280 + counter] == 0) then
+				i = i-1;
+			endif;
+			counter = counter+1;
+		endwhile;
+
+		if(i!= 0) then
+			[physicalSP - 2] = -1;
+			ireturn;
+		endif;
+	endif;
+
+	counter = 0;
+	while(counter<3) do
+		if([PTBR + counter*2]!= -1) then
+			[1280 + [PTBR + counter*2]] = 0;
+		endif;
+		[PTBR + counter*2] = -1;
+		[PTBR + counter*2 +1] = "00";
+		counter = counter+1;
+	endwhile;
+
+	counter = 25;
+	i = 0;
+	while(i < dataBlocks) do
+		if([1280 + counter] == 0) then
+			load(counter,[SCRATCHPAD + i]);
+			[PTBR + i*2] = counter;
+			[1280 + counter] = 1;
+			[PTBR + i*2 +1] = "01";
+			i = i+1;
+		endif;
+		counter = counter+1;
+	endwhile;
+
+	while(i<3) do
+		[PTBR + i*2] = -1;
+		[PTBR + i*2 +1] = "00";
+		i = i+1;
+	endwhile;
+
+	alias SWOFTIdx S10;
+	counter = 0;
+	while(counter< 8) do
+
+		SWOFTIdx = [currentPCB + 15 + counter*2];
+		if(SWOFTIdx != -1) then
+			[FILE_TABLE + SWOFTIdx*2 + 1] = [FILE_TABLE + SWOFTIdx*2 + 1] - 1;
+			if ([FILE_TABLE + SWOFTIdx*2 + 1] == 0) then
+				[FILE_TABLE + SWOFTIdx*2] = -1;
+			endif;
+		endif;		
+
+		[currentPCB + 15 + counter*2] = -1;
+		[currentPCB + 15 + counter*2 +1] = -1;
+		counter = counter+1;
+	endwhile;
+
+						     ////PARENT PID SHOULD REMAIN SAME??
+		
+	SP = 3*512;
+	alias physicalSP S9;
+	physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512); 
+	[physicalSP] = 0;
+	ireturn;
+endif;
+
+if(sysCallNo == 11) then
+	[physicalSP - 2] = [currentPCB];
+	ireturn;
+endif;
+
+if(sysCallNo == 12) then
+	[physicalSP - 2] = [currentPCB + 31];
+	ireturn;
+endif;

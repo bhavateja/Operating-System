@@ -1,0 +1,83 @@
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];
+
+alias currentPCB S2;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);	
+
+///EXIT
+
+if(sysCallNo == 10) then
+	alias counter S3;
+	alias currPID S4;
+	alias nextPID S5;
+	alias i S6;
+	currPID = (PTBR-1024)/8;
+	counter = (currPID+1)%32;
+	while(counter!= currPID) do
+		if([READY_LIST + 32*counter + 1] == 1) then
+			nextPID = counter;
+			break;
+		endif;
+		counter = (counter+1)%32;
+	endwhile;
+
+	if(counter == currPID) then
+		halt;
+	endif;
+	
+	[currentPCB + 1] = 0;
+	///////////////CLOSE THE FILES TOO
+
+	alias SWOFTIdx S6;
+	counter = 0;
+	while(counter<8) do
+		SWOFTIdx = [currentPCB + 15 + counter*2];
+		if(SWOFTIdx >= 0 && SWOFTIdx <= 7) then
+			[FILE_TABLE + SWOFTIdx*2 + 1] = [FILE_TABLE + SWOFTIdx*2 + 1] - 1;
+			if ([FILE_TABLE + SWOFTIdx*2 + 1] == 0) then
+				[FILE_TABLE + SWOFTIdx*2] = -1;
+			endif;
+			[currentPCB + 15 + counter*2] = -1;
+			[currentPCB + 15 + counter*2 + 1] = -1;
+		endif;
+		counter = counter+1;
+	endwhile;
+
+	[currentPCB + 1] = 0;
+
+	counter = 0;
+	while(counter<4) do
+		if([PTBR + counter*2 + 1] == "01" || [PTBR + counter*2 + 1] == "11" ) then
+			if([PTBR + counter*2] != -1) then
+				[1280 + [PTBR + counter*2]] = 0;
+			endif;
+		endif;
+		[PTBR + counter*2 + 1] = "00";
+		[PTBR + counter*2] = -1;
+		counter = counter+1;
+	endwhile;
+
+
+	alias var S7;
+	var = READY_LIST + 32*nextPID;
+	[var + 1] = 2;
+	BP = [var + 2];
+	SP = [var + 3];
+	SP = SP + 1;
+	PTBR = [var + 5];
+	PTLR = [var + 6];
+	R0 = [var + 7];
+	R1 = [var + 8];
+	R2 = [var + 9];
+	R3 = [var + 10];
+	R4 = [var + 11];
+	R5 = [var + 12];
+	R6 = [var + 13];
+	R7 = [var + 14];
+	physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+	[physicalSP] = [var + 4];
+	ireturn;
+
+endif;	

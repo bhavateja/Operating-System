@@ -1,0 +1,89 @@
+
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];
+
+alias currentPCB S2;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);	
+
+
+///////SEEK()
+
+if (sysCallNo == 6) then
+	alias fileDescriptor S3;
+	alias newLSEEK S4;
+	newLSEEK = [physicalSP - 3];
+	fileDescriptor = [physicalSP - 4];
+
+	if (fileDescriptor < 0 || fileDescriptor > 7) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif; 
+
+	alias pointerSWOFT S5;
+	pointerSWOFT = [currentPCB + 15 + fileDescriptor*2];
+	if (pointerSWOFT == -1) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias FATIdx S6;
+	FATIdx = [FILE_TABLE + pointerSWOFT*2];
+	
+	alias fileSize S7;
+	fileSize = [FAT + FATIdx*8 + 1];
+
+	if (newLSEEK < 0 || newLSEEK > fileSize) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	[currentPCB + 15 + fileDescriptor * 2 + 1] = newLSEEK;
+	
+	[physicalSP - 2] = 0;
+	ireturn;
+	
+endif;	
+
+
+///READ()
+
+if (sysCallNo == 7) then
+	alias fileDescriptor S3;
+	fileDescriptor = [physicalSP - 4];
+
+	if (fileDescriptor < 0 || fileDescriptor > 7) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif; 
+		
+	alias pointerSWOFT S4;
+	pointerSWOFT = [currentPCB + 15 + fileDescriptor*2];
+	if (pointerSWOFT == -1) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias FATIdx S5;
+	FATIdx = [FILE_TABLE + pointerSWOFT*2];
+	load(1,[FAT+ FATIdx*8 + 2]);
+
+	alias seekPosition S6;
+	seekPosition = [currentPCB + 15 + fileDescriptor*2 + 1];
+
+	alias fileSize S7;
+	fileSize = [FAT + FATIdx*8 + 1];
+	if (seekPosition == fileSize) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	load(1,[SCRATCHPAD + seekPosition/512]);
+	[physicalSP - 3] = [SCRATCHPAD + (seekPosition%512)];
+
+	[currentPCB + 15 + fileDescriptor*2 + 1]	= seekPosition + 1;
+	[physicalSP - 2] = 0;
+	ireturn;
+endif;		

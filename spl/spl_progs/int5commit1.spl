@@ -1,0 +1,116 @@
+
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];
+
+alias currentPCB S2;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);	
+
+if(sysCallNo == 8) then        //////////////FORK
+	alias counter S3;
+	alias childPID S4;
+	counter = 0;
+	while(counter < 32) do
+		if([READY_LIST + 32*counter + 1] == 0) then
+			childPID = counter;
+			[READY_LIST + 32*childPID] = counter;
+			break;
+		endif;
+		counter = counter +1;
+	endwhile;
+
+	if(counter == 32) then
+		[physicalSP-2] = -1;
+		ireturn;
+	endif;
+
+	alias i S5;
+	alias currentPID S6;
+	alias childPTBR S7;
+	alias childPCB S11;
+	currentPID = (PTBR-1024)/8;
+	childPTBR = 1024+ 8*childPID;
+	childPCB = READY_LIST + 32*childPID;
+
+	alias validPageCount S10;
+	validPageCount = 0;
+	counter = 0;
+	while(counter < 4) do
+		if([PTBR + counter*2 + 1] == "01" || [PTBR + counter*2 + 1] == "11") then
+			validPageCount = validPageCount+1;
+		endif;
+		counter = counter+1;
+	endwhile;
+
+	counter = 29;
+	i = 0;
+	while(counter<64 && i<validPageCount) do
+		if([1280 + counter] == 0) then
+			i = i+1;
+		endif;
+		counter  = counter+1;
+	endwhile;
+
+	if(counter == 64) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	counter = 29;
+	i = 0;
+	alias j S9;
+	while(i<4) do
+		if([1280 + counter] == 0) then
+				j = 0;
+				if([PTBR + i*2 + 1] == "01" || [PTBR + i*2 + 1] == "11") then
+					while(j<512) do
+						[counter*512 +j] = [ [PTBR + 2*i]*512 +j];
+						j = j+1;
+					endwhile;
+					[childPTBR + i*2] = counter;
+					[childPTBR + i*2 + 1] = "01";
+					[1280 + counter] = 1;
+				else
+					[childPTBR + i*2] = -1;
+					[childPTBR + i*2 + 1] = "00";
+					counter = counter-1;
+				endif;	
+				i = i+1;
+				
+		endif;
+		counter  = counter+1;
+	endwhile;	
+
+	[childPCB + 1] = 1; ///STATE
+	[childPCB + 2] = BP; //BP
+	[childPCB + 3] = SP-1;	///SP
+	[childPCB + 4] = [physicalSP];  //IP
+	[childPCB + 5] = childPTBR;  //PTBR
+	[childPCB + 6] = 4; //PTLR
+	[childPCB + 7] = R0;
+	[childPCB + 8] = R1;
+	[childPCB + 9] = R2;
+	[childPCB + 10] = R3;
+	[childPCB + 11] = R4;
+	[childPCB + 12] = R5;
+	[childPCB + 13] = R6;
+	[childPCB + 14] = R7;
+	[childPCB + 31] = currentPID;
+
+	counter = 0;
+	while(counter < 8) do
+		[childPCB + 15 + counter*2] = [currentPCB + 15 + counter*2];
+		[childPCB + 15 + counter*2 +1] = [currentPCB + 15 + counter*2 +1];
+		if([childPCB + 15 + counter*2] != -1) then
+			[FILE_TABLE+[childPCB + 15 + counter*2]*2 + 1] = [FILE_TABLE+[childPCB + 15 + counter*2]*2 + 1]+1; 
+		endif;
+		counter = counter+1;
+	endwhile;
+
+	[physicalSP - 2] = childPID;	
+	counter = ([childPTBR + 2*((SP-1) / 512)] * 512) + ((SP-1) % 512);
+	[counter - 1] = -2;
+	ireturn;
+
+endif;

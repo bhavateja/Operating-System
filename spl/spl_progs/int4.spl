@@ -1,0 +1,75 @@
+
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+alias sysCallNo S1;
+sysCallNo = [physicalSP - 1];
+
+alias currentPCB S2;
+currentPCB = READY_LIST + 32 * ((PTBR - 1024) / 8);	
+
+///////////////////////////////////////WRITE()
+
+if (sysCallNo == 5) then
+	alias fileDescriptor S3;
+	alias wordToWrite S4;
+	wordToWrite = [physicalSP - 3];
+	fileDescriptor = [physicalSP - 4];
+
+	if (fileDescriptor < 0 || fileDescriptor > 7) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif; 
+
+	alias pointerSWOFT S5;
+	pointerSWOFT = [currentPCB + 15 + fileDescriptor*2];
+	if (pointerSWOFT == -1) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias FATIdx S6;
+	FATIdx = [FILE_TABLE + pointerSWOFT*2];
+	load(1,[FAT+ FATIdx*8 + 2]);
+
+	alias dataBlockIdx S7;
+	alias offset S8;
+	dataBlockIdx = [currentPCB + 15 + fileDescriptor*2 + 1]/512;
+
+	offset = [currentPCB + 15 + fileDescriptor*2 + 1]%512;
+	alias counter S9;
+
+
+	if ([SCRATCHPAD + dataBlockIdx] == -1) then
+		counter = 24;
+		while (counter < 448) do
+			if ([3072 + counter] == 0) then
+				break;
+			endif;
+			counter = counter+1;
+		endwhile;
+
+		if (counter == 448) then
+			[physicalSP - 2] = -1;
+			ireturn;
+		endif;
+
+		[3072 + counter] = 1;
+		[SCRATCHPAD + dataBlockIdx] = counter;
+		store(1,[FAT + FATIdx*8 + 2]);
+		[FAT + FATIdx*8 + 1] = [FAT + FATIdx*8 + 1] + 512;
+		store(5, 19);	// FAT
+		store(6, 20); //DFL
+
+
+	endif;
+
+	counter = [SCRATCHPAD + dataBlockIdx] ;
+	load(1,counter);
+	[SCRATCHPAD + offset] = wordToWrite;
+	store(1,counter);
+	[currentPCB + 15 + fileDescriptor*2 + 1] = [currentPCB + 15 + fileDescriptor*2 + 1] + 1;
+	[physicalSP - 2] = 0;
+	ireturn;
+
+endif;

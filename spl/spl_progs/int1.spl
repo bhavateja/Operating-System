@@ -1,0 +1,175 @@
+//print "In INT 1";
+//ireturn;
+
+//////////////////STAGE 7 INTERRUPT FOR SYSTEM CALLS
+
+alias physicalSP S0;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+
+alias sysCallNo S1;
+alias fileName S2;
+sysCallNo = [physicalSP - 1];
+fileName = [physicalSP - 3];
+
+
+/////CREATE()
+
+if(sysCallNo == 1) then
+	alias FATIdx S3;
+	FATIdx = 0;
+			///////////////////////////////////////////// MAX 64 FILES and Each FAT ENTRY 8 words	
+	while (FATIdx < 64) do
+		
+		if ([FAT + FATIdx * 8] == fileName) then
+			[physicalSP - 2] = -1;			/////RETURN -1 if FILE ALREADY EXISTS
+			ireturn;			
+		endif;
+		
+		FATIdx = FATIdx + 1;	
+		
+	endwhile;
+	
+	////////////////SEARCH DISKFREELIST
+	
+	alias DFLIdx S4;	// Disk Free List Index
+	DFLIdx = 24;
+	
+	while (DFLIdx <= 447) do              /////////REST ARE USED FOR SWAP SPACE		
+		if ([3072 + DFLIdx] == 0) then		
+			break;
+		endif;				
+		DFLIdx = DFLIdx + 1;			
+	endwhile;
+	
+	if (DFLIdx == 448) then
+		[physicalSP - 2] = -1; ////////RETURN -1 if no SPACE
+		ireturn;			
+	endif;
+	
+	// find a free slot in the FAT
+		
+	FATIdx = 0;
+	while (FATIdx < 64) do	
+		if ([FAT + FATIdx * 8 + 2] == -1) then	// checking block number of basic block
+			break;		
+		endif;		
+		FATIdx = FATIdx + 1;	
+	endwhile;
+	
+	if (FATIdx == 64) then
+		[physicalSP - 2] = -1;
+		ireturn;	
+	endif;
+	
+	// we have a valid block from disk free list whose index stored in DFListIndex
+	// and a FAT entry index stored in FATIndex
+	
+	// initialize entries of the FAT Index
+	[FAT + FATIdx * 8] = fileName;
+	[FAT + FATIdx * 8 + 1] = 0;	// file size
+	[FAT + FATIdx * 8 + 2] = DFLIdx;	// block number of basic block
+
+	load(1,DFLIdx);
+
+	alias dataBlockEntry S5;
+	dataBlockEntry = 0;
+	while (dataBlockEntry < 256) do
+		[SCRATCHPAD + dataBlockEntry] = -1;
+		dataBlockEntry = dataBlockEntry + 1;		
+	endwhile;
+
+
+	store(1, DFLIdx); // write the basic block back
+
+	[FAT + 512 + DFLIdx] = 1;  // set entry in DF List for basic block as 1 (used)
+	
+	store(5, 19);	// store the FAT
+	store(6, 20);	// store the Disk Free List
+	
+	[physicalSP - 2] = 0;    ////RETUEN 0 FOR SUCCESS
+	ireturn;
+
+endif;
+
+/////DELETE()
+
+if (sysCallNo == 4) then
+	alias FATIdx S3;
+	FATIdx = 0;	
+	while (FATIdx < 64) do
+		if ([FAT + FATIdx * 8] == fileName) then
+			break;
+		endif;
+		FATIdx = FATIdx + 1;	
+	endwhile;
+	if (FATIdx == 64) then
+		[physicalSP - 2] = -1;
+		ireturn;
+	endif;
+
+	alias SWOFTIndex S4;
+	SWOFTIndex = 0;
+	
+	while (SWOFTIndex < 64) do
+		if ([SWOFTIndex * 2 + FILE_TABLE] == FATIdx) then
+			[physicalSP - 2] = -1;
+			ireturn;
+		endif;
+		SWOFTIndex = SWOFTIndex + 1;
+	endwhile;
+
+	alias counter S6;
+
+	load(1, [FAT + FATIdx * 8 + 2]);
+	alias dataBlockIdx S5;
+	dataBlockIdx = 0;
+	alias dataBlockNo S7;
+
+	while (dataBlockIdx < 256 ) do
+		if ([SCRATCHPAD + dataBlockIdx] == -1) then
+			dataBlockIdx = dataBlockIdx + 1;
+			load(1,[FAT + FATIdx*8 + 2]);
+			continue;
+		endif;
+		
+		dataBlockNo = [SCRATCHPAD + dataBlockIdx];
+		load(1,dataBlockNo);
+		counter = 0;
+		
+		while(counter < 512) do
+			[SCRATCHPAD + counter] = "";
+			counter = counter + 1;
+		endwhile;
+		
+		store(1,dataBlockNo);
+		[3072 + dataBlockNo] = 0;
+		
+		load(1,[FAT + FATIdx*8 + 2]);
+		dataBlockIdx = dataBlockIdx + 1;
+	endwhile;
+
+	load(1,[FAT + FATIdx*8 + 2]);
+	counter = 0;
+	while (counter < 512) do
+		[SCRATCHPAD+counter] = "";
+		counter = counter+1;
+	endwhile;
+	store(1,[FAT + FATIdx*8 + 2]);
+	[3072 + [FAT + FATIdx*8 + 2]] = 0;	// mark basic block as free
+	
+		// invalidate the FAT entry
+	[FAT + FATIdx*8] = "";
+	[FAT + FATIdx*8 + 1] = 0;	// size
+	[FAT + FATIdx*8 + 2] = -1;
+	
+		// store back the FAT and Disk Free List from the memory to disk
+	store(5, 19);	// FAT
+	store(6, 20);	// Disk Free List
+	
+		// return with a zero
+	[physicalSP - 2] = 0;
+	ireturn;
+	
+endif;
+
+	

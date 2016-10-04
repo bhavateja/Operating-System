@@ -1,0 +1,59 @@
+//print "Timer";
+alias currentPID S0;
+currentPID = (PTBR - 1024) / 8;
+alias currentPCB S1;
+currentPCB = READY_LIST + 32 * currentPID;
+[ currentPCB + 1 ] = 1; // Set STATE to READY
+[ currentPCB + 2 ] = BP;
+[ currentPCB + 3 ] = SP - 1;	
+alias physicalSP S2;
+physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+[ currentPCB + 4 ] = [ physicalSP ]; // Save IP of current process in the PCB from the stack
+[ currentPCB + 5 ] = PTBR;
+[ currentPCB + 6 ] = PTLR;
+[ currentPCB + 7 ] = R0;	
+[ currentPCB + 8 ] = R1;
+[ currentPCB + 9 ] = R2;
+[ currentPCB + 10 ] = R3;
+[ currentPCB + 11 ] = R4;
+[ currentPCB + 12 ] = R5;
+[ currentPCB + 13 ] = R6;
+[ currentPCB + 14 ] = R7;
+
+//////////////ROUND ROBIN
+alias counter S3;
+alias var S4;
+alias flag S5;
+flag = 0;
+counter = (currentPID + 1)%32;
+while(counter!=currentPID) do
+	var = READY_LIST + 32 * counter ;
+	if([var + 1] != 1) then
+		counter = (counter + 1)%32;
+	else
+		flag = 1;
+		break;
+	endif;
+endwhile;
+
+if(flag == 1) then
+	//print "Timer";
+	[var + 1] = 2;
+	BP = [var + 2];
+	SP = [var + 3];
+	SP = SP + 1;
+	PTBR = [var + 5];
+	PTLR = [var + 6];
+	R0 = [var + 7];
+	R1 = [var + 8];
+	R2 = [var + 9];
+	R3 = [var + 10];
+	R4 = [var + 11];
+	R5 = [var + 12];
+	R6 = [var + 13];
+	R7 = [var + 14];
+	physicalSP = ([PTBR + 2 * (SP / 512)] * 512) + (SP % 512);
+	[physicalSP] = [var + 4];
+endif;
+
+ireturn;
